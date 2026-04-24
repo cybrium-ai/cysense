@@ -14,16 +14,19 @@ jobs:
             os: ubuntu-latest
             name: cysense-linux-amd64
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             name: cysense-linux-arm64
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
             name: cysense-darwin-amd64
             sign: true
           - target: aarch64-apple-darwin
-            os: macos-latest
+            os: macos-14
             name: cysense-darwin-arm64
             sign: true
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: cysense-windows-amd64.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -36,12 +39,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libpcap-dev
-      - name: Cross-compile tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
+      - name: Install Npcap SDK (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
-          echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
+          Invoke-WebRequest -Uri "https://npcap.com/dist/npcap-sdk-1.13.zip" -OutFile npcap-sdk.zip
+          Expand-Archive -Path npcap-sdk.zip -DestinationPath npcap-sdk
+          echo "LIB=${{ github.workspace }}\npcap-sdk\Lib\x64" >> $env:GITHUB_ENV
       - run: cargo build --release --target ${{ matrix.target }}
       - name: Sign macOS
         if: matrix.sign
@@ -63,10 +67,17 @@ jobs:
             security list-keychain -d user -s $KEYCHAIN_PATH
             codesign --force --sign "$APPLE_SIGNING_IDENTITY" --timestamp --options runtime target/${{ matrix.target }}/release/cysense
           fi
-      - run: |
+      - name: Rename binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/cysense dist/${{ matrix.name }}
           chmod +x dist/${{ matrix.name }}
+      - name: Rename binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          mkdir dist
+          cp target/${{ matrix.target }}/release/cysense.exe dist/${{ matrix.name }}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
@@ -90,4 +101,5 @@ jobs:
             artifacts/cysense-linux-arm64/cysense-linux-arm64
             artifacts/cysense-darwin-amd64/cysense-darwin-amd64
             artifacts/cysense-darwin-arm64/cysense-darwin-arm64
+            artifacts/cysense-windows-amd64.exe/cysense-windows-amd64.exe
             artifacts/checksums.txt
