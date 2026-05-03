@@ -7,6 +7,7 @@ mod capture;
 mod dissect;
 mod assets;
 mod anomaly;
+mod hardware_rot;
 mod output;
 
 use clap::{Parser, Subcommand};
@@ -76,6 +77,11 @@ enum Commands {
 
     /// Show version
     Version,
+
+    /// Report this host's hardware Root of Trust (TPM / Secure Enclave).
+    /// Detection only — feeds device-fingerprint and tamper-detection
+    /// flows. JSON output: {kind, vendor, present}.
+    Rot,
 }
 
 fn print_banner() {
@@ -223,6 +229,14 @@ async fn main() {
         Commands::Version => {
             println!("cysense {} — Cybrium AI Network Sensor", env!("CARGO_PKG_VERSION"));
             println!("https://github.com/cybrium-ai/cysense");
+        }
+
+        Commands::Rot => {
+            let r = hardware_rot::detect();
+            match serde_json::to_string_pretty(&r) {
+                Ok(j)  => println!("{j}"),
+                Err(e) => eprintln!("error serialising root-of-trust: {e}"),
+            }
         }
     }
 }
