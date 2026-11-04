@@ -62,6 +62,27 @@ enum Commands {
         promisc: bool,
     },
 
+    /// Replay a saved pcap/pcapng file through the live dissection pipeline.
+    /// Produces the same session output as `listen`, for reproducible offline
+    /// analysis and benchmarking.
+    Replay {
+        /// Path to a saved pcap/pcapng capture file
+        #[arg(short, long)]
+        pcap: String,
+
+        /// BPF filter (e.g., "tcp port 502" for Modbus)
+        #[arg(short, long)]
+        filter: Option<String>,
+
+        /// Output format: text, json, events
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+
+        /// Output file (default: stdout)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
     /// List available network interfaces
     Interfaces,
 
@@ -175,6 +196,56 @@ async fn main() {
                         }
                     }
                 }
+                Err(e) => {
+                    eprintln!("{} {}", "Error:".red().bold(), e);
+                    std::process::exit(2);
+                }
+            }
+        }
+
+        Commands::Replay {
+            pcap,
+            filter,
+            format,
+            output: out_file,
+        } => {
+            print_banner();
+            eprintln!("  {} {}", "Pcap:".white().bold(), pcap.yellow());
+            if let Some(ref f) = filter {
+                eprintln!("  {} {}", "BPF Filter:".white().bold(), f);
+            }
+            eprintln!();
+
+            let config = capture::ReplayConfig { pcap, filter };
+
+            match capture::start_replay(config) {
+                Ok(session) => match format.as_str() {
+                    "json" => {
+                        let json = output::to_json(&session);
+                        if let Some(path) = &out_file {
+                            std::fs::write(path, &json).expect("Failed to write output");
+                            eprintln!("\n{} {}", "Session saved to".green(), path);
+                        } else {
+                            println!("{json}");
+                        }
+                    }
+                    "events" => {
+                        let events = output::to_events(&session);
+                        if let Some(path) = &out_file {
+                            std::fs::write(path, &events).expect("Failed to write output");
+                        } else {
+                            println!("{events}");
+                        }
+                    }
+                    _ => {
+                        output::print_summary(&session);
+                        if let Some(path) = &out_file {
+                            let json = output::to_json(&session);
+                            std::fs::write(path, &json).expect("Failed to write output");
+                            eprintln!("\n{} {}", "Session saved to".green(), path);
+                        }
+                    }
+                },
                 Err(e) => {
                     eprintln!("{} {}", "Error:".red().bold(), e);
                     std::process::exit(2);
